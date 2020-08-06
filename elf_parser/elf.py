@@ -108,45 +108,38 @@ class ELF:
             section = Section(sh, section_name, data)
             self.sections.append(section)
 
-    def _load_symbols(self):
-        symtab = self.get_section_by_name('.symtab')
-        strtab = self.get_section_by_name('.strtab')
-        # symbol table is not exist
-        if symtab is None or strtab is None:
-            return
+    def _load_symbol_data(self, symtab, strtab):
         str_table = strtab.data
         stream = io.BytesIO(symtab.data)
-        symhdr_size = symtab.entsize
-        for idx in range(symtab.size // symhdr_size):
+        for _ in range(symtab.size // symtab.entsize):
             symh = self.symhdr_struct()
-            stream.seek(idx * symhdr_size)
             stream.readinto(symh)
-
             name_pos = symh.st_name
-            symbol_name = str_table[name_pos:str_table.find(b'\x00', name_pos)].decode()
-            symbol = Symbol(symh, symbol_name)
-            self.symbols.append(symbol)
+            sym_name = str_table[name_pos:str_table.find(b'\x00', name_pos)].decode()
+            self.symbols.append(
+                Symbol(symh, sym_name)
+            )
 
-    def _load_dynamic(self):
+    def _load_symbols(self):
+        # symbol
+        symtab = self.get_section_by_name('.symtab')
+        strtab = self.get_section_by_name('.strtab')
+        if symtab and strtab:
+            self._load_symbol_data(symtab, strtab)
+        # dynamic symbol
         dynstr = self.get_section_by_name('.dynstr')
         dynsym = self.get_section_by_name('.dynsym')
+        if dynsym and dynstr:
+            self._load_symbol_data(dynsym, dynstr)
+
+    def _load_dynamic(self):
         dynamic = self.get_section_by_name('.dynamic')
         # load dynamic link data
-        dynstr_table = dynstr.data
         stream = io.BytesIO(dynamic.data)
-        for idx in range(dynamic.size // dynamic.entsize):
+        for _ in range(dynamic.size // dynamic.entsize):
             dh = self.dynhdr_struct()
             stream.readinto(dh)
             self.dynamics.append(Dynamic(dh))
-        # load dynamic symbols
-        stream = io.BytesIO(dynsym.data)
-        for idx in range(dynsym.size // dynsym.entsize):
-            symh = self.symhdr_struct()
-            stream.readinto(symh)
-            name_pos = dsymh.st_name
-            sym_name = dynstr_table[name_pos:dynstr_table.find(b'\x00', name_pos)].decode()
-            symbol = Symbol(symh, sym_name)
-            self.symbols.append(symbol)
 
     def search(self, target: bytes):
         rslt = []
