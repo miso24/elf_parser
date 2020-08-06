@@ -19,7 +19,6 @@ class ELF:
         self.sections  = []
         self.symbols = []
         self.segments = []
-        self.dyn_symbols = []
         self.dynamics = []
         # load
         self._init_structs()
@@ -110,8 +109,12 @@ class ELF:
             self.sections.append(section)
 
     def _load_symbols(self):
-        str_table = self.get_section_by_name('.strtab').data
         symtab = self.get_section_by_name('.symtab')
+        strtab = self.get_section_by_name('.strtab')
+        # symbol table is not exist
+        if symtab is None or strtab is None:
+            return
+        str_table = strtab.data
         stream = io.BytesIO(symtab.data)
         symhdr_size = symtab.entsize
         for idx in range(symtab.size // symhdr_size):
@@ -125,10 +128,11 @@ class ELF:
             self.symbols.append(symbol)
 
     def _load_dynamic(self):
-        dynstr_table = self.get_section_by_name('.dynstr').data
+        dynstr = self.get_section_by_name('.dynstr')
         dynsym = self.get_section_by_name('.dynsym')
         dynamic = self.get_section_by_name('.dynamic')
         # load dynamic link data
+        dynstr_table = dynstr.data
         stream = io.BytesIO(dynamic.data)
         for idx in range(dynamic.size // dynamic.entsize):
             dh = self.dynhdr_struct()
@@ -137,12 +141,12 @@ class ELF:
         # load dynamic symbols
         stream = io.BytesIO(dynsym.data)
         for idx in range(dynsym.size // dynsym.entsize):
-            dsymh = self.symhdr_struct()
-            stream.readinto(dsymh)
+            symh = self.symhdr_struct()
+            stream.readinto(symh)
             name_pos = dsymh.st_name
-            dsym_name = dynstr_table[name_pos:dynstr_table.find(b'\x00', name_pos)].decode()
-            dsymbol = Symbol(dsymh, dsym_name)
-            self.dyn_symbols.append(dsymbol)
+            sym_name = dynstr_table[name_pos:dynstr_table.find(b'\x00', name_pos)].decode()
+            symbol = Symbol(symh, sym_name)
+            self.symbols.append(symbol)
 
     def search(self, target: bytes):
         rslt = []
@@ -191,12 +195,6 @@ class ELF:
         for symbol in self.symbols:
             if symbol.name == symbol_name:
                 return symbol
-        return None
-
-    def get_dynsymbol_by_name(self, dsymbol_name):
-        for dsymbol in self.dyn_symbols:
-            if dsymbol.name == dsymbol_name:
-                return dsymbol
         return None
 
     def get_dynamic_by_tag(self, dyn_tag):
